@@ -20,17 +20,8 @@ MS_PER_S = 1000.0
 class DartPlungerSimulatorGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Dart-Plunger Springer Simulator")
-        self.root.geometry("1600x900")  # Large window
-        
-        # Try to maximize window (platform-specific)
-        try:
-            self.root.state('zoomed')  # Windows
-        except:
-            try:
-                self.root.attributes('-zoomed', True)  # Linux
-            except:
-                pass  # If maximizing fails, just use the set geometry
+        self.root.title("Spring Plunger Simulator")
+        self._configure_window()
         
         # Default parameters
         self.params = {
@@ -64,6 +55,27 @@ class DartPlungerSimulatorGUI:
         
         self.setup_gui()
         self.run_simulation()  # Initial simulation
+
+    def _configure_window(self):
+        """Try to maximize the window cross-platform; fall back to full-screen geometry."""
+        self.root.update_idletasks()
+
+        try:
+            self.root.state('zoomed')  # Windows (and some *nix)
+            return
+        except tk.TclError:
+            pass
+
+        try:
+            self.root.attributes('-zoomed', True)  # Some Linux window managers
+            return
+        except tk.TclError:
+            pass
+
+        # Mac and other environments: manually size and anchor top-left
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        self.root.geometry(f"{screen_width}x{screen_height}+0+0")
         
     def setup_gui(self):
         # Create main frames with very generous spacing
@@ -166,22 +178,22 @@ class DartPlungerSimulatorGUI:
         
     def create_plots(self, parent):
         # Create very large matplotlib figure for maximum readability
-        self.fig = Figure(figsize=(16, 12), dpi=100)
+        self.fig = Figure(figsize=(18, 12), dpi=100)
         
-        # Create 3x2 subplot layout with generous spacing
+        # Create 3x3 subplot layout with generous spacing
         self.axes = []
-        for i in range(6):
-            ax = self.fig.add_subplot(3, 2, i+1)
+        for i in range(9):
+            ax = self.fig.add_subplot(3, 3, i+1)
             self.axes.append(ax)
         
         # Adjust subplot parameters for maximum readability
         self.fig.subplots_adjust(
             left=0.08,      # Left margin
             bottom=0.07,    # Bottom margin  
-            right=0.95,     # Right margin
+            right=0.97,     # Right margin
             top=0.93,       # Top margin
-            wspace=0.3,     # Width spacing between subplots
-            hspace=0.6      # Height spacing between subplots
+            wspace=0.35,    # Width spacing between subplots
+            hspace=0.45     # Height spacing between subplots
         )
         
         # Embed in tkinter with scrollbars if needed
@@ -278,26 +290,39 @@ class DartPlungerSimulatorGUI:
             
             # Configure all axes for maximum readability
             plot_configs = [
-                (d1_pos_mm, 'Dart Position', 'Position (mm)', 'blue'),
-                (d1_vel_fps, 'Dart Velocity', 'Velocity (fps)', 'red'),
-                (p1_pos_mm, 'Plunger Position', 'Position (mm)', 'green'),
-                (p1_vel_fps, 'Plunger Velocity', 'Velocity (fps)', 'magenta'),
-                (p_t_bar, 'System Pressure', 'Pressure (bar)', 'cyan'),
-                (v_t_ml, 'System Volume', 'Volume (mL)', 'orange')
+                (time_ms, d1_pos_mm, 'Dart Position vs Time', 'Time (ms)', 'Position (mm)', 'blue', True),
+                (time_ms, d1_vel_fps, 'Dart Velocity vs Time', 'Time (ms)', 'Velocity (fps)', 'red', True),
+                (d1_pos_mm, d1_vel_fps, 'Dart Velocity vs Dart Position', 'Dart Position (mm)', 'Velocity (fps)', 'purple', False),
+                (time_ms, p1_pos_mm, 'Plunger Position vs Time', 'Time (ms)', 'Position (mm)', 'green', True),
+                (time_ms, p1_vel_fps, 'Plunger Velocity vs Time', 'Time (ms)', 'Velocity (fps)', 'magenta', True),
+                (d1_pos_mm, p1_pos_mm, 'Plunger Position vs Dart Position', 'Dart Position (mm)', 'Plunger Position (mm)', 'brown', False),
+                (time_ms, p_t_bar, 'System Pressure vs Time', 'Time (ms)', 'Pressure (bar)', 'cyan', True),
+                (time_ms, v_t_ml, 'System Volume vs Time', 'Time (ms)', 'Volume (mL)', 'orange', True),
+                (d1_pos_mm, p_t_bar, 'Pressure vs Dart Position', 'Dart Position (mm)', 'Pressure (bar)', 'teal', False),
             ]
             
-            for i, (data, title, ylabel, color) in enumerate(plot_configs):
+            for i, (x_data, y_data, title, xlabel, ylabel, color, use_time_xlim) in enumerate(plot_configs):
                 ax = self.axes[i]
-                ax.plot(time_ms, data, color=color, linewidth=3)
-                ax.set_title(f'{title} vs Time', fontsize=14, fontweight='bold')
-                ax.set_xlabel('Time (ms)', fontsize=12)
+                ax.plot(x_data, y_data, color=color, linewidth=3)
+                ax.set_xlabel(xlabel, fontsize=12)
                 ax.set_ylabel(ylabel, fontsize=12)
                 ax.grid(True, alpha=0.3)
                 ax.tick_params(axis='both', labelsize=11)
                 ax.tick_params(axis='x', labelrotation=0)
-                ax.set_xlim(left=0, right=self.params['end_time'] * MS_PER_S)
-                if np.nanmin(data) >= 0:
+                if use_time_xlim:
+                    ax.set_xlim(left=0, right=self.params['end_time'] * MS_PER_S)
+                else:
+                    x_min = np.nanmin(x_data)
+                    x_max = np.nanmax(x_data)
+                    if np.isfinite(x_min) and np.isfinite(x_max):
+                        if x_min == x_max:
+                            span = abs(x_min) * 0.05 or 1.0
+                            ax.set_xlim(x_min - span, x_max + span)
+                        else:
+                            ax.set_xlim(x_min, x_max)
+                if np.nanmin(y_data) >= 0:
                     ax.set_ylim(bottom=0)
+                ax.set_title(title, fontsize=14, fontweight='bold')
 
                 # Keep both axes in plain notation
                 x_formatter = ScalarFormatter(useMathText=False)
