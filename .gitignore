@@ -13,4 +13,17 @@ uv.lock
 # Virtual environments
 .venv
 
+# Build artifacts
+py-standalone/
+build/
+dist/
+*.app
+*.spec
+*.tar.gz
+*.zip
+
+# Generated icon files
+*.ico
+*.icns
+
 .DS_Store
