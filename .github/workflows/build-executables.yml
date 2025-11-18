@@ -1,0 +1,172 @@
+name: Build Executables
+
+on:
+  push:
+    branches:
+      - main
+      - claude/**
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Build macOS executables
+        run: |
+          ./build.sh
+
+      - name: List build artifacts
+        run: |
+          ls -lah dist/
+          ls -lah dist/*.app/
+
+      - name: Create distribution archives
+        run: |
+          cd dist
+          zip -r ../spring-piston-simulator-macos.zip "Spring Piston Simulator.app"
+          zip -r ../nomad-simulator-macos.zip "Nomad Simulator.app"
+          cd ..
+
+      - name: Upload Spring Piston Simulator macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spring-piston-simulator-macos
+          path: spring-piston-simulator-macos.zip
+          retention-days: 30
+
+      - name: Upload Nomad Simulator macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nomad-simulator-macos
+          path: nomad-simulator-macos.zip
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+          echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+        shell: pwsh
+
+      - name: Convert icons to .ico format
+        run: |
+          uv run python convert_icons.py
+        shell: pwsh
+
+      - name: Build Windows executables
+        run: |
+          uv run pyinstaller --onefile --windowed --name nomad-simulator --icon icons/nomad-icon.ico `
+            --exclude-module scipy.stats `
+            --exclude-module scipy.sparse `
+            --exclude-module scipy.spatial `
+            --exclude-module scipy.ndimage `
+            --exclude-module scipy.signal `
+            --exclude-module scipy.fftpack `
+            --exclude-module scipy.linalg `
+            --exclude-module scipy.optimize `
+            --exclude-module scipy.interpolate `
+            --exclude-module scipy.cluster `
+            --exclude-module scipy.constants `
+            --exclude-module scipy.fft `
+            --exclude-module scipy.io `
+            --exclude-module scipy.misc `
+            --exclude-module scipy.odr `
+            --exclude-module scipy.special `
+            src/nomad_ui.py
+          uv run pyinstaller --onefile --windowed --name spring-piston-simulator --icon icons/spring-piston-icon.ico `
+            --exclude-module scipy.stats `
+            --exclude-module scipy.sparse `
+            --exclude-module scipy.spatial `
+            --exclude-module scipy.ndimage `
+            --exclude-module scipy.signal `
+            --exclude-module scipy.fftpack `
+            --exclude-module scipy.linalg `
+            --exclude-module scipy.optimize `
+            --exclude-module scipy.interpolate `
+            --exclude-module scipy.cluster `
+            --exclude-module scipy.constants `
+            --exclude-module scipy.fft `
+            --exclude-module scipy.io `
+            --exclude-module scipy.misc `
+            --exclude-module scipy.odr `
+            --exclude-module scipy.special `
+            src/spring_piston_gui.py
+        shell: pwsh
+
+      - name: List build artifacts
+        run: |
+          Get-ChildItem dist\*.exe | Format-Table Name, Length -AutoSize
+        shell: pwsh
+
+      - name: Create distribution archives
+        run: |
+          Compress-Archive -Path dist\spring-piston-simulator.exe -DestinationPath spring-piston-simulator-windows.zip
+          Compress-Archive -Path dist\nomad-simulator.exe -DestinationPath nomad-simulator-windows.zip
+        shell: pwsh
+
+      - name: Upload Spring Piston Simulator Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spring-piston-simulator-windows
+          path: spring-piston-simulator-windows.zip
+          retention-days: 30
+
+      - name: Upload Nomad Simulator Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nomad-simulator-windows
+          path: nomad-simulator-windows.zip
+          retention-days: 30
+
+  create-release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Prepare release files
+        run: |
+          mv spring-piston-simulator-macos/spring-piston-simulator-macos.zip .
+          mv nomad-simulator-macos/nomad-simulator-macos.zip .
+          mv spring-piston-simulator-windows/spring-piston-simulator-windows.zip .
+          mv nomad-simulator-windows/nomad-simulator-windows.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            spring-piston-simulator-macos.zip
+            nomad-simulator-macos.zip
+            spring-piston-simulator-windows.zip
+            nomad-simulator-windows.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
